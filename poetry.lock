@@ -409,7 +409,7 @@ test = ["pytest", "pytest-cov"]
 
 [[package]]
 name = "msgpack"
-version = "1.0.4"
+version = "1.0.5"
 description = "MessagePack serializer"
 category = "main"
 optional = false
@@ -523,7 +523,6 @@ python-versions = "*"
 [package.source]
 type = "url"
 url = "https://github.com/ludlows/python-pesq/archive/master.zip"
-
 [[package]]
 name = "pexpect"
 version = "4.8.0"
@@ -792,7 +791,6 @@ scipy = "*"
 [package.source]
 type = "url"
 url = "https://github.com/jfsantos/SRMRpy/archive/master.zip"
-
 [[package]]
 name = "stack-data"
 version = "0.6.2"
@@ -899,7 +897,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "flake8 (<5)", "pytest-co
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8"
-content-hash = "da02d07d97e10514f987d2a1396ce0140c59c6b23e61c9aed8e41cb32b2bfebb"
+content-hash = "beb98f5c0f604dae6f38b0b3800a57aea8d5da6353b0599a9f8fe966c7e542f0"
 
 [metadata.files]
 appnope = [
