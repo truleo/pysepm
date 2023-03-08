@@ -1,0 +1,6 @@
+dist
+.python-version
+*.prof
+*.wav
+.*.swp
+__pycache__
