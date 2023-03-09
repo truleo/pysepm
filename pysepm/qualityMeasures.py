@@ -54,7 +54,7 @@ def fwSNRseg(crit_filter, Zxx_clean, Zxx_noisy, eps):
     W_freq = clean_energy.pow(gamma)
     SNRlog = 10 * ((clean_energy**2) / error_energy).log10()
     fwSNR = (W_freq * SNRlog).sum(0) / W_freq.sum(0)
-    distortion = fwSNR.copy_(False)
+    distortion = fwSNR.clone().detach()
     distortion[distortion < -10] = -10
     distortion[distortion > 35] = 35
 
