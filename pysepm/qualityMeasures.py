@@ -450,7 +450,7 @@ def get_all_stats(clean_speech, raw_speech, fs):
         "composite2": Covl,
         "wss": wss_dist,
         "llr": llr_mean,
-        "segSNR": segSNR,
+        "SNRseg": segSNR,
         "pesq0": pesq_mos,
         "pesq1": mos_lqo,
         "fwSNRseg": fwSNRseg_val,
