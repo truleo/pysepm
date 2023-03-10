@@ -1,17 +1,34 @@
-from scipy.signal import stft, resample, butter, lfilter, hilbert
-from scipy.interpolate import interp1d
-from pystoi import stoi as pystoi  # https://github.com/mpariente/pystoi
 import numpy as np
+import torch
+from pystoi import stoi as pystoi  # https://github.com/mpariente/pystoi
+from scipy.interpolate import interp1d
+from scipy.signal import butter, hilbert, lfilter
 
 from .util import extract_overlapped_windows, resample_matlab_like
 
 stoi = pystoi
 
 
-def fwseg_noise(clean_speech, processed_speech, fs, frameLen=0.03, overlap=0.75):
-    clean_length = len(clean_speech)
-    processed_length = len(processed_speech)
-    rms_all = np.linalg.norm(clean_speech) / np.sqrt(processed_length)
+def do_stft(input_signal, n_fft, skiprate, window, winlength):
+    return torch.stft(
+        input_signal,
+        n_fft=n_fft,
+        hop_length=skiprate,
+        window=torch.tensor(window).to(input_signal.device),
+        normalized=False,
+        center=False,
+        onesided=False,
+        win_length=winlength,
+        return_complex=True,
+    )
+
+
+def fwseg_noise(
+    clean, noisy, fs=16000, frameLen=0.03, overlap=0.75, device=torch.device("cuda")
+):
+    clean_length = len(clean)
+    noisy_length = len(noisy)
+    rms_all = np.linalg.norm(clean) / np.sqrt(noisy_length)
 
     winlength = round(frameLen * fs)  # window length in samples
     skiprate = int(np.floor((1 - overlap) * frameLen * fs))  # window skip in samples
@@ -85,7 +102,6 @@ def fwseg_noise(clean_speech, processed_speech, fs, frameLen=0.03, overlap=0.75)
     # for each critical band filter.  Filter less than -30 dB and set to
     # zero.
     # ----------------------------------------------------------------------
-
     crit_filter = np.zeros((num_crit, int(n_fftby2)))
     g = np.zeros((num_crit, n_fftby2))
 
@@ -109,37 +125,35 @@ def fwseg_noise(clean_speech, processed_speech, fs, frameLen=0.03, overlap=0.75)
         1 - np.cos(2 * np.pi * np.arange(1, winlength + 1) / (winlength + 1))
     )
 
-    f, t, clean_spec = stft(
-        clean_speech[0 : int(num_frames) * skiprate + int(winlength - skiprate)],
-        fs=fs,
-        window=hannWin,
-        nperseg=winlength,
-        noverlap=winlength - skiprate,
-        nfft=n_fft,
-        detrend=False,
-        return_onesided=False,
-        boundary=None,
-        padded=False,
+    clean_spec = do_stft(
+        torch.tensor(
+            clean[0 : int(num_frames) * skiprate + int(winlength - skiprate)],
+            device=device,
+        ),
+        n_fft,
+        skiprate,
+        hannWin,
+        winlength,
     )
-    f, t, processed_spec = stft(
-        processed_speech[0 : int(num_frames) * skiprate + int(winlength - skiprate)],
-        fs=fs,
-        window=hannWin,
-        nperseg=winlength,
-        noverlap=winlength - skiprate,
-        nfft=n_fft,
-        detrend=False,
-        return_onesided=False,
-        boundary=None,
-        padded=False,
+    noisy_spec = do_stft(
+        torch.tensor(
+            noisy[0 : int(num_frames) * skiprate + int(winlength - skiprate)],
+            device=device,
+        ),
+        n_fft,
+        skiprate,
+        hannWin,
+        winlength,
     )
 
     clean_frames = extract_overlapped_windows(
-        clean_speech[0 : int(num_frames) * skiprate + int(winlength - skiprate)],
+        clean[0 : int(num_frames) * skiprate + int(winlength - skiprate)],
         winlength,
         winlength - skiprate,
         None,
     )
+    # drop frames where we get near the boundaries
+    clean_frames = clean_frames[: min(clean_frames.shape[0], clean_spec.shape[-1]), :]
     rms_seg = np.linalg.norm(clean_frames, axis=-1) / np.sqrt(winlength)
     rms_db = 20 * np.log10(rms_seg / rms_all)
     # --------------------------------------------------------------
@@ -151,102 +165,98 @@ def fwseg_noise(clean_speech, processed_speech, fs, frameLen=0.03, overlap=0.75)
     lowInd = np.where(rms_db < -10)
     lowInd = lowInd[0]
 
-    num_high = np.sum(
-        clean_spec[0:n_fftby2, highInd] * np.conj(processed_spec[0:n_fftby2, highInd]),
+    num_high = torch.sum(
+        clean_spec[0:n_fftby2, highInd] * noisy_spec[0:n_fftby2, highInd].conj(),
         axis=-1,
     )
-    denx_high = np.sum(np.abs(clean_spec[0:n_fftby2, highInd]) ** 2, axis=-1)
-    deny_high = np.sum(np.abs(processed_spec[0:n_fftby2, highInd]) ** 2, axis=-1)
+    denx_high = clean_spec[0:n_fftby2, highInd].abs().pow(2).sum(axis=-1)
+    deny_high = noisy_spec[0:n_fftby2, highInd].abs().pow(2).sum(axis=-1)
 
-    num_middle = np.sum(
-        clean_spec[0:n_fftby2, middleInd]
-        * np.conj(processed_spec[0:n_fftby2, middleInd]),
+    num_middle = torch.sum(
+        clean_spec[0:n_fftby2, middleInd] * noisy_spec[0:n_fftby2, middleInd].conj(),
         axis=-1,
     )
-    denx_middle = np.sum(np.abs(clean_spec[0:n_fftby2, middleInd]) ** 2, axis=-1)
-    deny_middle = np.sum(np.abs(processed_spec[0:n_fftby2, middleInd]) ** 2, axis=-1)
+    denx_middle = clean_spec[0:n_fftby2, middleInd].abs().pow(2).sum(axis=-1)
+    deny_middle = noisy_spec[0:n_fftby2, middleInd].abs().pow(2).sum(axis=-1)
 
-    num_low = np.sum(
-        clean_spec[0:n_fftby2, lowInd] * np.conj(processed_spec[0:n_fftby2, lowInd]),
-        axis=-1,
+    num_low = torch.sum(
+        clean_spec[0:n_fftby2, lowInd] * noisy_spec[0:n_fftby2, lowInd].conj(), axis=-1
     )
-    denx_low = np.sum(np.abs(clean_spec[0:n_fftby2, lowInd]) ** 2, axis=-1)
-    deny_low = np.sum(np.abs(processed_spec[0:n_fftby2, lowInd]) ** 2, axis=-1)
+    denx_low = clean_spec[0:n_fftby2, lowInd].abs().pow(2).sum(axis=-1)
+    deny_low = noisy_spec[0:n_fftby2, lowInd].abs().pow(2).sum(axis=-1)
 
-    num2_high = np.abs(num_high) ** 2
+    num2_high = num_high.abs().pow(2)
     r2_high = num2_high / (denx_high * deny_high)
 
-    num2_middle = np.abs(num_middle) ** 2
+    num2_middle = num_middle.abs().pow(2)
     r2_middle = num2_middle / (denx_middle * deny_middle)
 
-    num2_low = np.abs(num_low) ** 2
+    num2_low = num_low.abs().pow(2)
     r2_low = num2_low / (denx_low * deny_low)
     # --------------------------------------------------------------
     # cal distortion frame by frame
 
-    clean_spec = np.abs(clean_spec)
-    processed_spec = np.abs(processed_spec) ** 2
+    clean_spec = clean_spec.abs().pow(2)
+    noisy_spec = noisy_spec.abs().pow(2)
 
     W_freq = Weight
-
-    processed_energy = crit_filter.dot(
-        (processed_spec[0:n_fftby2, highInd].T * r2_high).T
+    crit_filter = torch.tensor(crit_filter, device=clean_spec.device)
+    noisy_energy = torch.matmul(
+        crit_filter, (noisy_spec[0:n_fftby2, highInd].T * r2_high).T
     )
-    de_processed_energy = crit_filter.dot(
-        (processed_spec[0:n_fftby2, highInd].T * (1 - r2_high)).T
+    de_noisy_energy = torch.matmul(
+        crit_filter, (noisy_spec[0:n_fftby2, highInd].T * (1 - r2_high)).T
     )
-    SDR = processed_energy / de_processed_energy
+    SDR = noisy_energy / de_noisy_energy
     # Eq 13 in Kates (2005)
-    SDRlog = 10 * np.log10(SDR)
+    SDRlog = 10 * SDR.log10()
     SDRlog_lim = SDRlog
     SDRlog_lim[SDRlog_lim < -15] = -15
     SDRlog_lim[SDRlog_lim > 15] = 15  # limit between [-15, 15]
     Tjm = (SDRlog_lim + 15) / 30
-    distortionh = W_freq.dot(Tjm) / np.sum(W_freq, axis=0)
+    distortionh = W_freq.dot(Tjm.detach().cpu().numpy()) / np.sum(W_freq, axis=0)
     distortionh[distortionh < 0] = 0
 
-    processed_energy = crit_filter.dot(
-        (processed_spec[0:n_fftby2, middleInd].T * r2_middle).T
+    noisy_energy = torch.matmul(
+        crit_filter, (noisy_spec[0:n_fftby2, middleInd].T * r2_middle).T
     )
-    de_processed_energy = crit_filter.dot(
-        (processed_spec[0:n_fftby2, middleInd].T * (1 - r2_middle)).T
+    de_noisy_energy = torch.matmul(
+        crit_filter, (noisy_spec[0:n_fftby2, middleInd].T * (1 - r2_middle)).T
     )
-    SDR = processed_energy / de_processed_energy
+    SDR = noisy_energy / de_noisy_energy
     # Eq 13 in Kates (2005)
-    SDRlog = 10 * np.log10(SDR)
+    SDRlog = 10 * SDR.log10()
     SDRlog_lim = SDRlog
     SDRlog_lim[SDRlog_lim < -15] = -15
     SDRlog_lim[SDRlog_lim > 15] = 15  # limit between [-15, 15]
     Tjm = (SDRlog_lim + 15) / 30
-    distortionm = W_freq.dot(Tjm) / np.sum(W_freq, axis=0)
+    distortionm = W_freq.dot(Tjm.detach().cpu().numpy()) / np.sum(W_freq, axis=0)
     distortionm[distortionm < 0] = 0
 
-    processed_energy = crit_filter.dot(
-        (processed_spec[0:n_fftby2, lowInd].T * r2_low).T
+    noisy_energy = torch.matmul(
+        crit_filter, (noisy_spec[0:n_fftby2, lowInd].T * r2_low).T
     )
-    de_processed_energy = crit_filter.dot(
-        (processed_spec[0:n_fftby2, lowInd].T * (1 - r2_low)).T
+    de_noisy_energy = torch.matmul(
+        crit_filter, (noisy_spec[0:n_fftby2, lowInd].T * (1 - r2_low)).T
     )
-    SDR = processed_energy / de_processed_energy
+    SDR = noisy_energy / de_noisy_energy
     # Eq 13 in Kates (2005)
-    SDRlog = 10 * np.log10(SDR)
+    SDRlog = 10 * SDR.log10()
     SDRlog_lim = SDRlog
     SDRlog_lim[SDRlog_lim < -15] = -15
     SDRlog_lim[SDRlog_lim > 15] = 15  # limit between [-15, 15]
     Tjm = (SDRlog_lim + 15) / 30
-    distortionl = W_freq.dot(Tjm) / np.sum(W_freq, axis=0)
+    distortionl = W_freq.dot(Tjm.detach().cpu().numpy()) / np.sum(W_freq, axis=0)
     distortionl[distortionl < 0] = 0
 
     return distortionh, distortionm, distortionl
 
 
-def csii(clean_speech, processed_speech, sample_rate):
-    sampleLen = min(len(clean_speech), len(processed_speech))
-    clean_speech = clean_speech[0:sampleLen]
-    processed_speech = processed_speech[0:sampleLen]
-    vec_CSIIh, vec_CSIIm, vec_CSIIl = fwseg_noise(
-        clean_speech, processed_speech, sample_rate
-    )
+def csii(clean, noisy, sample_rate):
+    sampleLen = min(len(clean), len(noisy))
+    clean = clean[0:sampleLen]
+    noisy = noisy[0:sampleLen]
+    vec_CSIIh, vec_CSIIm, vec_CSIIl = fwseg_noise(clean, noisy, sample_rate)
 
     CSIIh = np.mean(vec_CSIIh)
     CSIIm = np.mean(vec_CSIIm)
@@ -335,12 +345,12 @@ def get_ansis(BAND):
     return fcenter, ANSIs
 
 
-def ncm(clean_speech, processed_speech, fs):
+def ncm(clean, noisy, fs):
     if fs != 8000 and fs != 16000:
         raise ValueError("fs must be either 8 kHz or 16 kHz")
 
-    x = clean_speech  # clean signal
-    y = processed_speech  # noisy signal
+    x = clean  # clean signal
+    y = noisy  # noisy signal
     F_SIGNAL = fs
 
     F_ENVELOPE = 32  # limits modulations to 0<f<16 Hz

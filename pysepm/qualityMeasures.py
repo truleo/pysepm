@@ -276,12 +276,12 @@ def get_crit_filter(n_fft, fs):
     return crit_filter
 
 
-def do_stft(input_signal, n_fft, skiprate, window, winlength, device):
+def do_stft(input_signal, n_fft, skiprate, window, winlength):
     return torch.stft(
         input_signal,
         n_fft=n_fft,
         hop_length=skiprate,
-        window=torch.tensor(window).to(device),
+        window=torch.tensor(window).to(input_signal.device),
         normalized=False,
         onesided=True,
         win_length=winlength,
@@ -384,7 +384,6 @@ def wss_and_fwSNRseg(
         skiprate,
         hannWin,
         winlength,
-        device,
     )
     Zxx_noisy = do_stft(
         raw_speech[0 : int(num_frames) * skiprate + int(winlength - skiprate)],
@@ -392,7 +391,6 @@ def wss_and_fwSNRseg(
         skiprate,
         hannWin,
         winlength,
-        device,
     )
 
     wss_val = wss(Zxx_clean, Zxx_noisy, hannWin, crit_filter, device)
