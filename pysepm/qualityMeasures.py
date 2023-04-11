@@ -1,5 +1,6 @@
 from scipy.linalg import toeplitz
 import pesq as pypesq  # https://github.com/ludlows/python-pesq
+from pesq.cypesq import NoUtterancesError
 import numpy as np
 
 import torch
@@ -401,17 +402,21 @@ def wss_and_fwSNRseg(
 
 
 def pesq(clean_speech, raw_speech, fs):
-    if fs == 8000:
-        mos_lqo = pypesq.pesq(fs, clean_speech, raw_speech, "nb")
-        pesq_mos = (
-            46607 / 14945 - (2000 * np.log(1 / (mos_lqo / 4 - 999 / 4000) - 1)) / 2989
-        )  # 0.999 + ( 4.999-0.999 ) / ( 1+np.exp(-1.4945*pesq_mos+4.6607) )
-    elif fs == 16000:
-        mos_lqo = pypesq.pesq(fs, clean_speech, raw_speech, "wb")
-        pesq_mos = np.NaN
-    else:
-        raise ValueError("fs must be either 8 kHz or 16 kHz")
-
+    try:
+        if fs == 8000:
+            mos_lqo = pypesq.pesq(fs, clean_speech, raw_speech, "nb")
+            pesq_mos = (
+                46607 / 14945
+                - (2000 * np.log(1 / (mos_lqo / 4 - 999 / 4000) - 1)) / 2989
+            )  # 0.999 + ( 4.999-0.999 ) / ( 1+np.exp(-1.4945*pesq_mos+4.6607) )
+        elif fs == 16000:
+            mos_lqo = pypesq.pesq(fs, clean_speech, raw_speech, "wb")
+            pesq_mos = 0.0
+        else:
+            raise ValueError("fs must be either 8 kHz or 16 kHz")
+    except NoUtterancesError:
+        pesq_mos = 0.0
+        mos_lqo = 0.0
     return pesq_mos, mos_lqo
 
 
