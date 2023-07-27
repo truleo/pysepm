@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pysepm"
-version = "0.1.4"
+version = "0.1.5"
 description = "Computes Objective Quality Measures"
 authors = ["Your Name <you@example.com>"]
 license = "MIT"

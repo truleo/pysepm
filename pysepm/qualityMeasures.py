@@ -1,14 +1,13 @@
-from scipy.linalg import toeplitz
-import pesq as pypesq  # https://github.com/ludlows/python-pesq
-from pesq.cypesq import NoUtterancesError
 import numpy as np
-
+import pesq as pypesq  # https://github.com/ludlows/python-pesq
 import torch
-from .wss_utils import find_loc_peaks
 from numba import jit
-from .util import extract_overlapped_windows
+from pesq.cypesq import BufferTooShortError, NoUtterancesError
+from scipy.linalg import toeplitz
 
 from .intelligibilityMeasures import csii
+from .util import extract_overlapped_windows
+from .wss_utils import find_loc_peaks
 
 
 def SNRseg(clean_speech, raw_speech, fs, frame_len=0.03, overlap=0.75):
@@ -414,7 +413,7 @@ def pesq(clean_speech, raw_speech, fs):
             pesq_mos = 0.0
         else:
             raise ValueError("fs must be either 8 kHz or 16 kHz")
-    except NoUtterancesError:
+    except (NoUtterancesError, BufferTooShortError):
         pesq_mos = 0.0
         mos_lqo = 0.0
     return pesq_mos, mos_lqo
