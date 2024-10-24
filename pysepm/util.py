@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.signal import firls, kaiser, upfirdn
 from fractions import Fraction
-
+from scipy.signal.windows import kaiser
+from scipy.signal import firls, upfirdn
 
 def extract_overlapped_windows(x, nperseg, noverlap, window=None):
     # source: https://github.com/scipy/scipy/blob/v1.2.1/scipy/signal/spectral.py
