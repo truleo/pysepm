@@ -6,9 +6,9 @@ authors = ["Your Name <you@example.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = ">=3.8"
+python = ">=3.10"
 numpy = "*"
-scipy = "*"
+scipy = ">=1.14.1"
 numba = "*"
 pystoi = "*"
 librosa = "*"
