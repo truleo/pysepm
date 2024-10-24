@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.signal import firls, kaiser, upfirdn
 from fractions import Fraction
 from scipy.signal.windows import kaiser
 from scipy.signal import firls, upfirdn
